@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Citi Bike Live Availability</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    #map { height: 100vh; }
+    body { margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script>
+    const map = L.map('map').setView([40.7484, -73.9857], 13); // centered on Manhattan
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markers = [];
+
+    function colorFor(bikes) {
+      if (bikes === 0) return "red";
+      if (bikes < 5) return "orange";
+      return "green";
+    }
+
+    async function loadStations() {
+      const res = await fetch("http://localhost:8000/stations");
+      const stations = await res.json();
+
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      stations.forEach(s => {
+        const marker = L.circleMarker([s.lat, s.lon], {
+          radius: 6,
+          color: colorFor(s.bikes_available),
+          fillOpacity: 0.8
+        }).addTo(map);
+
+        marker.bindPopup(
+          `<b>${s.name}</b><br>
+           Bikes: ${s.bikes_available} (${s.ebikes_available} e-bikes)<br>
+           Docks: ${s.docks_available}`
+        );
+
+        markers.push(marker);
+      });
+    }
+
+    loadStations();
+    setInterval(loadStations, 15000); // refresh every 15s
+  </script>
+</body>
+</html>
