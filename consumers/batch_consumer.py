@@ -3,12 +3,17 @@ import os
 import time
 from datetime import datetime, timezone
 from confluent_kafka import Consumer
+import boto3
+from dotenv import load_dotenv
 
 KAFKA_BOOTSTRAP_SERVER = "localhost:9092"
 TOPIC = "citibike-station-status"
 CONSUMER_GROUP = "batch-writer-group"
 DATA_DIR = "data"
 FLUSH_INTERVAL_SECONDS = 30 #write a file every 30s of collected messages
+
+load_dotenv()
+S3_BUCKET = os.environ["S3_BUCKET"]
 
 consumer = Consumer({
     "bootstrap.servers": KAFKA_BOOTSTRAP_SERVER,
@@ -17,29 +22,43 @@ consumer = Consumer({
 })
 
 consumer.subscribe([TOPIC])
+s3 = boto3.client("s3")
 
-def get_output_path():
+def get_s3_key():
     now = datetime.now(timezone.utc)
     dt_str = now.strftime("%Y-%m-%d")
     hour_str = now.strftime("%H")
-    folder = os.path.join(DATA_DIR, f"dt={dt_str}",f"hour={hour_str}")
-    os.makedirs(folder, exist_ok=True)
     timestamp = now.strftime("%Y%m%dT%H%M%S")
-    return os.path.join(folder,f"batch_{timestamp}.json")
+    return f"raw/dt={dt_str}/hour={hour_str}/batch_{timestamp}.json"
+
+
+# def get_output_path():
+#     now = datetime.now(timezone.utc)
+#     dt_str = now.strftime("%Y-%m-%d")
+#     hour_str = now.strftime("%H")
+#     folder = os.path.join(DATA_DIR, f"dt={dt_str}",f"hour={hour_str}")
+#     os.makedirs(folder, exist_ok=True)
+#     timestamp = now.strftime("%Y%m%dT%H%M%S")
+#     return os.path.join(folder,f"batch_{timestamp}.json")
 
 def write_batch(messages):
     if not messages:
         return 
 
-    path = get_output_path()
-    with open(path, "w") as f:
-        for msg in messages:
-            f.write(json.dumps(msg)+ "\n")
-    print(f"wrote {len(messages)} messages to {path}")
+    body = "\n".join(json.dumps(m) for m in messages)
+    key=get_s3_key()
+
+    # path = get_output_path()
+    # with open(path, "w") as f:
+    #     for msg in messages:
+    #         f.write(json.dumps(msg)+ "\n")
+
+    s3.put_object(Bucket=S3_BUCKET, Key=key, Body=body.encode("utf-8"))
+    print(f"wrote {len(messages)} messages to s3://{S3_BUCKET}/{key}")
 
 def main():
-    print(f"starting batch consumer --> writing to '{DATA_DIR}/'")
-
+    # print(f"starting batch consumer --> writing to '{DATA_DIR}/'")
+    print(f"starting batch consumer --> writing to s3://{S3_BUCKET}")
     buffer = []
     last_flush = time.time()
 
