@@ -3,3 +3,5 @@ backend/__pycache__
 airflow/dags/__pycache__
 todo.txt
 logs
+.env
+.DS_Store

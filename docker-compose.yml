@@ -18,6 +18,8 @@ services:
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    volumes:
+      - kafka-data: /var/lib/kafka/data
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -35,3 +37,5 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+volumes:
+  kafka-data:
