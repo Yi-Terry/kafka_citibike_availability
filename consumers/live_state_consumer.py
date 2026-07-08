@@ -1,15 +1,16 @@
 import json
+import os
 from confluent_kafka import Consumer
 import redis
 
-KAFKA_BOOSTRAP_SERVER = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVER = os.environ.get("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
 TOPIC = "citibike-station-status"
 CONSUMER_GROUP = "live-state-writer-group"
-
-r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+r = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
 
 consumer = Consumer({
-    "bootstrap.servers": KAFKA_BOOSTRAP_SERVER,
+    "bootstrap.servers": KAFKA_BOOTSTRAP_SERVER,
     "group.id": CONSUMER_GROUP,
     "auto.offset.reset":"earliest"
 })

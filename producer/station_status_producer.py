@@ -1,14 +1,16 @@
 import json
 import time
 import requests
+import os
 from confluent_kafka import Producer
 
 STATION_STATUS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVER = os.environ.get("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
 TOPIC = 'citibike-station-status'
 POLL_INTERVAL_SECONDS = 15
 
-producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS})
+
+producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP_SERVER})
 
 def delivery_report(err, msg):
     if err is not None:

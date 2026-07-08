@@ -16,10 +16,11 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
       KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
     volumes:
-      - kafka-data: /var/lib/kafka/data
+      - kafka-data:/var/lib/kafka/data
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -37,5 +38,67 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+    container_name: producer
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: kafka:29092
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+    depends_on:
+      - kafka
+  batch-consumer:
+    build:
+      context: .
+      dockerfile: consumers/Dockerfile.batch
+    container_name: batch-consumer
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: kafka:29092
+      PYTHONUNBUFFERED: "1"
+    env_file:
+      - .env 
+    restart: unless-stopped
+    depends_on:
+      - kafka
+  live-state-consumer:
+    build:
+      context: .
+      dockerfile: consumers/Dockerfile.live
+    container_name: live-batch-consumer
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: kafka:29092
+      REDIS_HOST: redis
+      PYTHONUNBUFFERED: "1" 
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - redis  
+  
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: backend
+    environment:
+      REDIS_HOST: redis
+      PYTHONUNBUFFERED: "1" 
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/station_info.json:/app/data/station_info.json:ro
+    restart: unless-stopped
+    depends_on:
+      - redis  
+  
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "5500:80"
+    depends_on:
+      - backend 
 volumes:
   kafka-data:
