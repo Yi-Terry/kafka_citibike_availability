@@ -1,4 +1,5 @@
 import json
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import redis
@@ -12,8 +13,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-r = redis.Redis(host="localhost",port=6379,decode_responses=True)
+REDIS_HOST  = os.environ.get("REDIS_HOST", "localhost")
+r = redis.Redis(host=REDIS_HOST,port=6379,decode_responses=True)
 
 with open("data/station_info.json") as f:
     STATION_INFO = json.load(f)

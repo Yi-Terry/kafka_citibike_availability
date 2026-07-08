@@ -7,16 +7,14 @@ import pandas as pd
 import boto3
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from dotenv import load_dotenv
 
-load_dotenv()
 # DATA_DIR = "/opt/airflow/data"
 S3_BUCKET = os.environ["S3_BUCKET"]
 s3 = boto3.client("s3")
 
 def list_hour_keys(dt_str, hour_str):
     prefix = f"raw/dt={dt_str}/hour={hour_str}/"
-    response = s3.list_objects_v2(Bucket=s3, Prefix=prefix)
+    response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
     return [obj["Key"] for obj in response.get("Contents", [])]
 
 def read_json_lines_from_s3(key):
@@ -24,7 +22,7 @@ def read_json_lines_from_s3(key):
     content = obj["Body"].read().decode("utf-8")
     return pd.read_json(io.StringIO(content), lines=True)
 
-def write_cv_to_s3(df,key):
+def write_csv_to_s3(df,key):
     csv_buffer=io.StringIO()
     df.to_csv(csv_buffer, index=False)
     s3.put_object(Bucket=S3_BUCKET, Key=key, Body=csv_buffer.getvalue().encode("utf-8"))
@@ -74,7 +72,7 @@ def summarize_last_hour(**context):
     # os.makedirs(os.path.dirname(output_path),exist_ok=True)
     # summary.to_csv(output_path,index=False)
     output_key = f"summaries/dt={dt_str}/hour={hour_str}.csv"
-    write_cv_to_s3(summary,output_key)
+    write_csv_to_s3(summary,output_key)
     print(f"wrote summary for {len(summary)} stations to s3://{S3_BUCKET}/{output_key}")
 
 def check_data_quality(**context):
@@ -129,7 +127,7 @@ def check_data_quality(**context):
         # os.makedirs(os.path.dirname(output_path), exist_ok=True)
         # suspicious.to_csv(output_path, index=False)
         output_key = f"suspicious/dt={dt_str}/hour={hour_str}.csv"
-        write_cv_to_s3(suspicious, output_key)
+        write_csv_to_s3(suspicious, output_key)
         print(f"WARNING {len(suspicious)} readings with 0 bikes and 0 docks - likely a feed issue, not real state")
         print(f"wrote suspicious readings to s3://{S3_BUCKET}/{output_key}")
     else:

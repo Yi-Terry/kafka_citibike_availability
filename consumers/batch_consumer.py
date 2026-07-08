@@ -6,7 +6,7 @@ from confluent_kafka import Consumer
 import boto3
 from dotenv import load_dotenv
 
-KAFKA_BOOTSTRAP_SERVER = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVER = os.environ.get("KAFKA_BOOTSTRAP_SERVER", "localhost:9092")
 TOPIC = "citibike-station-status"
 CONSUMER_GROUP = "batch-writer-group"
 DATA_DIR = "data"
