@@ -1,30 +1,101 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Citi Bike Live Availability</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <style>
     #map { height: 100vh; }
-    body { margin: 0; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    #locate-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      padding: 8px 14px;
+      background: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: box-shadow 0.2s;
+    }
+    #locate-btn:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+
+    .station-popup { font-size: 13px; min-width: 180px; }
+    .popup-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; line-height: 1.3; }
+    .popup-divider { border-top: 1px solid #e5e7eb; margin: 6px 0; }
+    .popup-section { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .popup-row { display: flex; justify-content: space-between; padding: 2px 0; }
+    .popup-row span:last-child { font-weight: 600; }
+    .popup-note { font-size: 12px; color: #9ca3af; font-style: italic; }
   </style>
 </head>
 <body>
+  <button id="locate-btn">📍 Find My Location</button>
   <div id="map"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script>
-    const map = L.map('map').setView([40.7484, -73.9857], 13); // centered on Manhattan
+    const map = L.map('map').setView([40.7484, -73.9857], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
     let markers = [];
+    let userMarker = null;
 
     function colorFor(bikes) {
-      if (bikes === 0) return "red";
-      if (bikes < 5) return "orange";
-      return "green";
+      if (bikes === 0) return "#ef4444";    // red
+      if (bikes < 5)  return "#f97316";    // orange
+      if (bikes < 10) return "#eab308";    // yellow
+      return "#22c55e";                     // green
+    }
+
+    function markerSize(docks) {
+      // scale marker size loosely by station capacity
+      if (!docks || docks < 10) return 6;
+      if (docks < 20) return 8;
+      return 10;
+    }
+
+    function buildPopup(s) {
+      const hasAnalytics = s.readings > 0;
+      const analyticsHtml = hasAnalytics ? `
+        <div class="popup-divider"></div>
+        <div class="popup-section">Last hour</div>
+        <div class="popup-row">
+          <span>Avg bikes</span><span>${s.avg_bikes_available}</span>
+        </div>
+        <div class="popup-row">
+          <span>Min / Max</span><span>${s.min_bikes_available} / ${s.max_bikes_available}</span>
+        </div>
+        <div class="popup-row">
+          <span>Readings</span><span>${s.readings}</span>
+        </div>
+      ` : `<div class="popup-divider"></div><div class="popup-note">No summary data yet</div>`;
+
+      return `
+        <div class="station-popup">
+          <div class="popup-name">${s.name}</div>
+          <div class="popup-divider"></div>
+          <div class="popup-section">Right now</div>
+          <div class="popup-row">
+            <span>🚲 Bikes</span><span>${s.bikes_available}</span>
+          </div>
+          <div class="popup-row">
+            <span>⚡ E-bikes</span><span>${s.ebikes_available}</span>
+          </div>
+          <div class="popup-row">
+            <span>🅿️ Docks</span><span>${s.docks_available}</span>
+          </div>
+          ${analyticsHtml}
+        </div>
+      `;
     }
 
     async function loadStations() {
@@ -35,24 +106,53 @@
       markers = [];
 
       stations.forEach(s => {
+        const color = colorFor(s.bikes_available);
+        const size = markerSize(s.docks_available);
+
         const marker = L.circleMarker([s.lat, s.lon], {
-          radius: 6,
-          color: colorFor(s.bikes_available),
-          fillOpacity: 0.8
+          radius: size,
+          fillColor: color,
+          color: "#ffffff",
+          weight: 1.5,
+          opacity: 1,
+          fillOpacity: 0.85,
         }).addTo(map);
 
-        marker.bindPopup(
-          `<b>${s.name}</b><br>
-           Bikes: ${s.bikes_available} (${s.ebikes_available} e-bikes)<br>
-           Docks: ${s.docks_available}`
-        );
-
+        marker.bindPopup(buildPopup(s), { maxWidth: 220 });
         markers.push(marker);
       });
     }
 
+    // GPS location
+    function distanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function locateUser() {
+      if (!navigator.geolocation) { alert("Geolocation not supported"); return; }
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        if (userMarker) map.removeLayer(userMarker);
+        userMarker = L.circleMarker([latitude, longitude], {
+          radius: 10,
+          fillColor: "#3b82f6",
+          color: "#ffffff",
+          weight: 2,
+          fillOpacity: 1,
+        }).addTo(map).bindPopup("You are here").openPopup();
+        map.setView([latitude, longitude], 15);
+      });
+    }
+
+    document.getElementById("locate-btn").addEventListener("click", locateUser);
+
     loadStations();
-    setInterval(loadStations, 15000); // refresh every 15s
+    setInterval(loadStations, 15000);
   </script>
 </body>
 </html>

@@ -84,6 +84,8 @@ services:
     environment:
       REDIS_HOST: redis
       PYTHONUNBUFFERED: "1" 
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:
