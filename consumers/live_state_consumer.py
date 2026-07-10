@@ -35,6 +35,7 @@ def main():
 
             redis_key = f"station:{station_id}"
             r.set(redis_key,json.dumps(station))
+            print(f"wrote station {station_id} to Redis")
 
     except KeyboardInterrupt:
         print("Shutting down live-state consumer...")
