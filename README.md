@@ -20,13 +20,15 @@ Citi Bike GBFS API
               ▼                                │
         [ backend (FastAPI) ]                  ▼
         GET /stations                  [ Airflow DAG, hourly ]
-        joins Redis state with         summarize_last_hour +
-        station_info.json              check_data_quality
-              │                        writes CSVs to S3
-              ▼                        (summaries/, suspicious/)
+        joins Redis state +            summarize_last_hour +
+        station_info.json +            check_data_quality
+        S3 hourly summary              writes CSVs to S3
+              │                   ◄─── (summaries/, suspicious/)
+              ▼
         [ frontend ]
-        Leaflet map, polls
-        /stations every 15s
+        Leaflet map, polls /stations every 15s
+        color-coded markers + analytics popups
+        GPS locate button
 ```
 
 ## Components
@@ -37,8 +39,8 @@ Citi Bike GBFS API
 | Station info fetcher | [producer/fetch_station_info.py](producer/fetch_station_info.py) | One-off script that pulls `station_information` (name, lat/lon) and writes it to `data/station_info.json`, used to enrich live status with static metadata. |
 | Live-state consumer | [consumers/live_state_consumer.py](consumers/live_state_consumer.py) | Consumes the topic and writes the latest known state per station to Redis (`station:<id>`), keyed for fast lookup. |
 | Batch consumer | [consumers/batch_consumer.py](consumers/batch_consumer.py) | Consumes the topic, buffers messages for 30s, and writes them as newline-delimited JSON to S3 under `raw/dt=YYYY-MM-DD/hour=HH/`. |
-| Backend API | [backend/main.py](backend/main.py) | FastAPI service exposing `GET /stations`, joining live Redis state with static station metadata. |
-| Frontend | [frontend/index.html](frontend/index.html) | Leaflet map centered on Manhattan; polls the backend every 15s and color-codes stations by bikes available (red/orange/green). Includes GPS "Find My Location" feature and nearest station detection. |
+| Backend API | [backend/main.py](backend/main.py) | FastAPI service with two endpoints: `GET /stations` joins live Redis state with static station metadata and the latest hourly summary from S3 (loaded at startup); `GET /summary/refresh` reloads the latest summary from S3 without restarting the container. |
+| Frontend | [frontend/index.html](frontend/index.html) | Leaflet map centered on Manhattan; polls the backend every 15s. Markers are color-coded by availability (red/orange/yellow/green), sized by station capacity, with white borders. Clicking a station shows a two-section popup: live data (bikes, e-bikes, docks) and last-hour analytics (avg/min/max from Airflow). Includes a GPS "Find My Location" button that centers the map on the user's position. |
 | Airflow DAG | [airflow/dags/citibike_hourly_summary.py](airflow/dags/citibike_hourly_summary.py) | Runs hourly: aggregates the prior hour's raw S3 data into per-station min/max/avg bike availability (`summaries/`), and flags readings with zero bikes and zero docks as likely feed glitches (`suspicious/`). |
 
 ## Tech stack
@@ -47,7 +49,7 @@ Citi Bike GBFS API
 - **State store**: Redis
 - **Storage**: AWS S3 (raw events, hourly summaries, data-quality output)
 - **Orchestration**: Apache Airflow (CeleryExecutor, Postgres metadata DB)
-- **API**: FastAPI
+- **API**: FastAPI + pandas (summary enrichment)
 - **Frontend**: static HTML + Leaflet.js, served via nginx
 - **Infrastructure**: Terraform (AWS S3 bucket + IAM user/policy)
 - **Language**: Python 3.11
@@ -118,6 +120,12 @@ AWS infrastructure (S3 bucket, IAM user, scoped IAM policy) is managed as code v
    - Backend API: [http://localhost:8000/stations](http://localhost:8000/stations)
    - Kafka UI: [http://localhost:8080](http://localhost:8080)
 
+   The backend loads the latest hourly summary from S3 automatically on startup. After Airflow writes a new summary, reload it without restarting the backend:
+
+   ```bash
+   curl http://localhost:8000/summary/refresh
+   ```
+
 4. (Optional) Start Airflow for hourly summarization/data-quality checks:
 
    ```bash
@@ -140,13 +148,17 @@ s3://<bucket>/
 
 ## Shutting down
 
-```bash
-# Stop pipeline
-docker compose down
+Always stop Airflow before the pipeline — they share a network and stopping the pipeline first will leave Airflow containers dangling:
 
-# Stop Airflow (always include -p airflow)
+```bash
+# 1. Stop Airflow first (always include -p airflow)
 docker compose -p airflow -f airflow-docker-compose.yaml down
+
+# 2. Then stop the pipeline
+docker compose down
 ```
+
+> **Note:** If `docker compose down` says "network is still in use", check for leftover debug containers with `docker network inspect kafka_citibike_availability_default` and remove any dangling containers with `docker rm -f <container-id>`.
 
 ## Roadmap
 
